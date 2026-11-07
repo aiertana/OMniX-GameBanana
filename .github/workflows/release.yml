@@ -1,0 +1,90 @@
+name: 插件出包并发布
+
+# push v* tag 自动构建启动器、打出 GameBananaStore 安装包并发布 Release。
+# 用法：git tag v1.1.1 && git push origin v1.1.1
+# 版本号从 tag 推（v1.1.1 → 1.1.1），plugin.json 的 Version 同步替换，
+# 保证包内版本和 Release 号永远一致。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要出的版本号，例如 1.1.1。留空就用 plugin.json 里的'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: 拉代码
+        uses: actions/checkout@v4
+
+      - name: 装 .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: 定版本号
+        id: ver
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $manifest = Get-Content plugin.json -Raw | ConvertFrom-Json
+            $version = $manifest.Version
+          }
+          Write-Output "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Output "本次发布版本：$version"
+
+      - name: 编译启动器
+        shell: pwsh
+        run: |
+          dotnet publish src\OmniX.Plugin.GameBanana\OmniX.Plugin.GameBanana.csproj `
+            -c Release -f net9.0-windows -o build\GameBananaStore
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: 组包（校验版本一致后打 zip）
+        shell: pwsh
+        run: |
+          $version = '${{ steps.ver.outputs.version }}'
+
+          # plugin.json：Version 换成本次 tag 版本
+          $manifest = Get-Content plugin.json -Raw
+          $manifest = $manifest -replace '"Version":\s*"[^"]+"', "`"Version`": `"$version`""
+          Set-Content -Path build\GameBananaStore\plugin.json -Value $manifest -Encoding UTF8
+
+          # 校验：包里 exe 必须存在，版本对不上就别发
+          $exe = 'build\GameBananaStore\OmniX.Plugin.GameBanana.exe'
+          if (-not (Test-Path $exe)) {
+            Write-Error '启动器 exe 不在产物里，终止发布'
+            exit 1
+          }
+
+          Compress-Archive -Path build\GameBananaStore `
+            -DestinationPath "OMniX-GameBanana-$version.zip" -Force
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: OMniX-GameBanana ${{ steps.ver.outputs.version }}
+          body: |
+            GameBanana 独立插件 ${{ steps.ver.outputs.version }}
+
+            ## 安装
+            1. 下载下方 `OMniX-GameBanana-${{ steps.ver.outputs.version }}.zip`
+            2. 解压，把 `GameBananaStore` 文件夹放进 OMniX 安装目录的 `GamesData\Plugins\`
+            3. 重启 OMniX → 功能专区 → 点 GameBanana 卡片「浏览」
+
+            新旧版本 OMniX 均可用（旧版自动降级为模拟点击打开）。
+          files: OMniX-GameBanana-*.zip
+          draft: false
+          prerelease: false

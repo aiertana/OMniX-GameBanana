@@ -1,0 +1,12 @@
+{
+  "Id": "GameBananaStore",
+  "Name": "GameBanana",
+  "Description": "在线浏览 / 搜索 GameBanana 的 Mod，点卡片打开下载安装页，装到选定的角色目录。",
+  "Version": "1.1.0",
+  "Author": "aiertana",
+  "Type": "action",
+  "Glyph": "\uE753",
+  "Entry": "OmniX.Plugin.GameBanana.exe",
+  "SourceUrl": "https://github.com/aiertana/OMniX-GameBanana",
+  "Games": []
+}
